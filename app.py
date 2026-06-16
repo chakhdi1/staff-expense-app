@@ -1,22 +1,19 @@
 import streamlit as st
 from datetime import datetime
+import os
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
 
-# App Setup
+# App Page Setup
 st.set_page_config(page_title="Staff Expense Tracker", page_icon="💰", layout="centered")
 
 st.title("💰 Staff Expense Tracker")
-st.write("Submit your daily business expenses here. Data syncs directly with Google Sheets.")
+st.write("Submit your daily business expenses here.")
 st.markdown("---")
 
-# Streamlit Secrets માંથી ઓટોમેટિક લિંક ઉપાડશે
-if "public_gsheets_url" in st.secrets:
-    GOOGLE_SHEET_URL = st.secrets["public_gsheets_url"]
-else:
-    GOOGLE_SHEET_URL = None
+# ગૂગલ શીટ વગર સીધો ગિટહબ પર ડેટા સેવ થશે
+DATA_FILE = "expenses.csv"
 
-# સ્ટાફના નામ (તમારો સાચો સ્ટાફ)
+# Staff Names
 staff_members = ["Select Name...", "KRUNAL SHUKLA", "AJAY DANGAR", "AJAY PARMAR", "Salesman 4", "Salesman 5"]
 selected_name = st.selectbox("👤 Select Employee Name:", staff_members)
 
@@ -39,42 +36,38 @@ if st.button("📤 Submit Expense", type="primary"):
         st.error("❌ Please select your name!")
     elif amount <= 0:
         st.error("❌ Please enter a valid amount!")
-    elif not GOOGLE_SHEET_URL:
-        st.error("❌ Google Sheet link is missing in Secrets!")
     else:
-        try:
-            conn = st.connection("gsheets", type=GSheetsConnection)
-            # ગૂગલ શીટમાંથી ડેટા રીડ કરવો
-            existing_data = conn.read(spreadsheet=GOOGLE_SHEET_URL, ttl=0)
-            existing_data = existing_data.dropna(how="all")
+        # નવો ડેટા
+        new_row = pd.DataFrame([{
+            "Date/Time": current_time,
+            "Employee Name": selected_name,
+            "Category": selected_category,
+            "Description": description,
+            "Amount": amount,
+            "Payment Mode": selected_mode,
+            "Images": f"{len(uploaded_files)} image(s)"
+        }])
+        
+        # ક્લાઉડ ફાઈલ અપડેટ કરવી
+        if os.path.exists(DATA_FILE):
+            df = pd.read_csv(DATA_FILE)
+            df = pd.concat([df, new_row], ignore_index=True)
+        else:
+            df = new_row
             
-            new_row = pd.DataFrame([{
-                "Date/Time": current_time,
-                "Employee Name": selected_name,
-                "Category": selected_category,
-                "Description": description,
-                "Amount": amount,
-                "Payment Mode": selected_mode,
-                "Images Uploaded": f"{len(uploaded_files)} image(s)",
-                "Status": "Pending"
-            }])
-            
-            updated_df = pd.concat([existing_data, new_row], ignore_index=True)
-            # ગૂગલ શીટમાં સેવ કરવો
-            conn.update(spreadsheet=GOOGLE_SHEET_URL, data=updated_df)
-            st.success(f"✅ Thank you {selected_name}! Expense of ₹{amount} saved to Google Sheets.")
-            st.balloons()
-        except Exception as e:
-            st.error(f"Connection Error: {e}")
+        df.to_csv(DATA_FILE, index=False)
+        st.success(f"✅ Thank you {selected_name}! Expense saved successfully.")
+        st.balloons()
 
-# Admin section to view records
+# Admin Report Section
 st.markdown("---")
 if st.checkbox("👑 View Live Admin Report"):
     st.subheader("📋 Employee Expense Ledger")
-    if GOOGLE_SHEET_URL:
-        try:
-            conn = st.connection("gsheets", type=GSheetsConnection)
-            df = conn.read(spreadsheet=GOOGLE_SHEET_URL, ttl=0)
-            st.dataframe(df)
-        except:
-            st.info("No data found or sheet is empty.")
+    if os.path.exists(DATA_FILE):
+        df = pd.read_csv(DATA_FILE)
+        st.dataframe(df)
+        
+        csv_data = df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download Full Excel Sheet", data=csv_data, file_name="Expense_Report.csv", mime="text/csv")
+    else:
+        st.info("No data submitted yet.")
